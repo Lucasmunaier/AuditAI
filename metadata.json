@@ -1,0 +1,5 @@
+{
+  "name": "AuditAI - Fiscal Auditor",
+  "description": "A specialized tool for auditing government invoices (Notas Fiscais) against SICAF, Termo de Recebimento, and other supporting documents using Gemini 2.5.",
+  "requestFramePermissions": []
+}
