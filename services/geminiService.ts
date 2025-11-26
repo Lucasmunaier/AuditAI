@@ -1,6 +1,6 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
-import { ExtractedData } from "../types";
+import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { ExtractedData, ApiFilePart } from "../types";
 import { fileToBase64 } from "../utils";
 
 // Initialize Gemini Client
@@ -70,6 +70,120 @@ You MUST check if the *Content* of the document matches its *File Name*.
 Return the data in a clean JSON format matching the schema provided. 
 `;
 
+// Defined schema constant to avoid duplication between browser and API modes
+const RESPONSE_SCHEMA: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    sicaf: {
+      type: Type.OBJECT,
+      properties: {
+        found: { type: Type.BOOLEAN },
+        cnpj: { type: Type.STRING, nullable: true },
+        validityDates: { 
+          type: Type.OBJECT,
+          properties: {
+            federal_pgfn: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
+            fgts: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
+            trabalhista: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
+            estadual_distrital: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
+            municipal: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
+          }
+        }
+      }
+    },
+    termoRecebimento: {
+      type: Type.OBJECT,
+      properties: {
+        found: { type: Type.BOOLEAN },
+        cnpj: { type: Type.STRING, nullable: true },
+        signatureDate: { type: Type.STRING, nullable: true, description: "The specific date the commission signed. YYYY-MM-DD" },
+        isDefinitive: { type: Type.BOOLEAN },
+        bulletinDate: { type: Type.STRING, nullable: true },
+        hasContractReference: { type: Type.BOOLEAN },
+        contractStartYear: { type: Type.INTEGER, nullable: true },
+        totalValue: { type: Type.NUMBER, nullable: true },
+        contractNumber: { type: Type.STRING, nullable: true }
+      }
+    },
+    notaFiscal: {
+      type: Type.OBJECT,
+      properties: {
+        found: { type: Type.BOOLEAN },
+        number: { type: Type.STRING, nullable: true },
+        supplierName: { type: Type.STRING, nullable: true },
+        cnpj: { type: Type.STRING, nullable: true },
+        possibleCnpjs: { type: Type.ARRAY, items: { type: Type.STRING } },
+        emissionDate: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
+        grossValue: { type: Type.NUMBER, nullable: true, description: "Valor TOTAL DA NOTA (Bruto)" },
+        liquidValue: { type: Type.NUMBER, nullable: true, description: "Valor Líquido (Net)" },
+        isMaterial: { type: Type.BOOLEAN },
+        isService: { type: Type.BOOLEAN },
+        items: {
+          type: Type.ARRAY,
+          items: {
+              type: Type.OBJECT,
+              properties: {
+                  description: { type: Type.STRING },
+                  partNumber: { type: Type.STRING, nullable: true },
+                  quantity: { type: Type.NUMBER },
+                  unit: { type: Type.STRING, nullable: true }
+              }
+          }
+        }
+      }
+    },
+    relatorioFatura: {
+      type: Type.OBJECT,
+      properties: {
+        found: { type: Type.BOOLEAN },
+        emissionDate: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
+        arrivalDate: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
+        dueDate: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
+        totalValue: { type: Type.NUMBER, nullable: true, description: "The explicit 'Total Fatura' amount." },
+        empenhos: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              ne: { type: Type.STRING },
+              nd: { type: Type.STRING },
+              value: { type: Type.NUMBER }
+            }
+          }
+        }
+      }
+    },
+    rmm: {
+      type: Type.OBJECT,
+      properties: {
+        found: { type: Type.BOOLEAN },
+        items: {
+          type: Type.ARRAY,
+          items: {
+              type: Type.OBJECT,
+              properties: {
+                  description: { type: Type.STRING },
+                  partNumber: { type: Type.STRING, nullable: true },
+                  quantity: { type: Type.NUMBER },
+                  unit: { type: Type.STRING, nullable: true }
+              }
+          }
+        }
+      }
+    },
+    informacaoAdministrativa: {
+      type: Type.OBJECT,
+      properties: {
+        found: { type: Type.BOOLEAN },
+        justification: { type: Type.STRING, nullable: true },
+        substitutesRmm: { type: Type.BOOLEAN },
+        justifiesServiceND: { type: Type.BOOLEAN },
+        wrongDocumentDetected: { type: Type.BOOLEAN, description: "True if a file named like Info Admin contains a DANFE" }
+      }
+    }
+  }
+};
+
 export const analyzeDocuments = async (files: File[]): Promise<ExtractedData> => {
   const model = "gemini-2.5-flash"; 
   
@@ -105,118 +219,52 @@ export const analyzeDocuments = async (files: File[]): Promise<ExtractedData> =>
     config: {
       systemInstruction: SYSTEM_INSTRUCTION,
       responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          sicaf: {
-            type: Type.OBJECT,
-            properties: {
-              found: { type: Type.BOOLEAN },
-              cnpj: { type: Type.STRING, nullable: true },
-              validityDates: { 
-                type: Type.OBJECT,
-                properties: {
-                  federal_pgfn: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
-                  fgts: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
-                  trabalhista: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
-                  estadual_distrital: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
-                  municipal: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
-                }
-              }
-            }
-          },
-          termoRecebimento: {
-            type: Type.OBJECT,
-            properties: {
-              found: { type: Type.BOOLEAN },
-              cnpj: { type: Type.STRING, nullable: true },
-              signatureDate: { type: Type.STRING, nullable: true, description: "The specific date the commission signed. YYYY-MM-DD" },
-              isDefinitive: { type: Type.BOOLEAN },
-              bulletinDate: { type: Type.STRING, nullable: true },
-              hasContractReference: { type: Type.BOOLEAN },
-              contractStartYear: { type: Type.INTEGER, nullable: true },
-              totalValue: { type: Type.NUMBER, nullable: true },
-              contractNumber: { type: Type.STRING, nullable: true }
-            }
-          },
-          notaFiscal: {
-            type: Type.OBJECT,
-            properties: {
-              found: { type: Type.BOOLEAN },
-              number: { type: Type.STRING, nullable: true },
-              supplierName: { type: Type.STRING, nullable: true },
-              cnpj: { type: Type.STRING, nullable: true },
-              possibleCnpjs: { type: Type.ARRAY, items: { type: Type.STRING } },
-              emissionDate: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
-              grossValue: { type: Type.NUMBER, nullable: true, description: "Valor TOTAL DA NOTA (Bruto)" },
-              liquidValue: { type: Type.NUMBER, nullable: true, description: "Valor Líquido (Net)" },
-              isMaterial: { type: Type.BOOLEAN },
-              isService: { type: Type.BOOLEAN },
-              items: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        description: { type: Type.STRING },
-                        partNumber: { type: Type.STRING, nullable: true },
-                        quantity: { type: Type.NUMBER },
-                        unit: { type: Type.STRING, nullable: true }
-                    }
-                }
-              }
-            }
-          },
-          relatorioFatura: {
-            type: Type.OBJECT,
-            properties: {
-              found: { type: Type.BOOLEAN },
-              emissionDate: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
-              arrivalDate: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
-              dueDate: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
-              totalValue: { type: Type.NUMBER, nullable: true, description: "The explicit 'Total Fatura' amount." },
-              empenhos: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    ne: { type: Type.STRING },
-                    nd: { type: Type.STRING },
-                    value: { type: Type.NUMBER }
-                  }
-                }
-              }
-            }
-          },
-          rmm: {
-            type: Type.OBJECT,
-            properties: {
-              found: { type: Type.BOOLEAN },
-              items: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        description: { type: Type.STRING },
-                        partNumber: { type: Type.STRING, nullable: true },
-                        quantity: { type: Type.NUMBER },
-                        unit: { type: Type.STRING, nullable: true }
-                    }
-                }
-              }
-            }
-          },
-          informacaoAdministrativa: {
-            type: Type.OBJECT,
-            properties: {
-              found: { type: Type.BOOLEAN },
-              justification: { type: Type.STRING, nullable: true },
-              substitutesRmm: { type: Type.BOOLEAN },
-              justifiesServiceND: { type: Type.BOOLEAN },
-              wrongDocumentDetected: { type: Type.BOOLEAN, description: "True if a file named like Info Admin contains a DANFE" }
-            }
-          }
-        }
-      }
+      responseSchema: RESPONSE_SCHEMA
+    }
+  });
+
+  if (response.text) {
+    return JSON.parse(response.text) as ExtractedData;
+  } else {
+    throw new Error("Failed to extract data from Gemini.");
+  }
+};
+
+// New function for direct API invocation (bypassing File objects)
+export const auditFromApi = async (files: ApiFilePart[]): Promise<ExtractedData> => {
+  const model = "gemini-2.5-flash";
+  
+  const parts = [];
+
+  for (const file of files) {
+    // Inject File Name context before the file content (Critical for cross-referencing)
+    parts.push({
+        text: `*** FILE NAME: "${file.fileName}" ***\n(Analyze the following document content in the context of this filename)`
+    });
+
+    // Use provided Base64 directly
+    parts.push({
+      inlineData: {
+        data: file.base64Data,
+        mimeType: file.mimeType,
+      },
+    });
+  }
+
+  // Add the prompt text
+  parts.push({
+    text: "Analyze these documents and extract the fiscal data. Be extremely strict about classifying 'Informação Administrativa' - if a file named like an admin document actually contains a Nota Fiscal/DANFE layout, flag it as wrongDocumentDetected."
+  });
+
+  const response = await ai.models.generateContent({
+    model: model,
+    contents: {
+      parts: parts
+    },
+    config: {
+      systemInstruction: SYSTEM_INSTRUCTION,
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA
     }
   });
 

@@ -91,3 +91,9 @@ export interface FileWithPreview {
   preview: string;
   type: 'pdf' | 'image';
 }
+
+export interface ApiFilePart {
+  base64Data: string;
+  mimeType: string;
+  fileName: string;
+}
